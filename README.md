@@ -85,5 +85,4 @@ python -m pip install -U "yt-dlp[default]"
 
 ## License
 
-No license has been selected yet. Add a `LICENSE` file before encouraging third-party
-redistribution or contributions.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
