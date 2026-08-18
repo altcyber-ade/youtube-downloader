@@ -32,27 +32,15 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-build.txt
 
-      - name: Install and stage FFmpeg
-        shell: pwsh
+      - name: Verify build-time dependencies
         run: |
-          choco install ffmpeg -y --no-progress
-          $ffmpeg = (Get-Command ffmpeg.exe).Source
-          $ffprobe = (Get-Command ffprobe.exe).Source
-          New-Item -ItemType Directory -Force -Path packaging/bin | Out-Null
-          Copy-Item $ffmpeg packaging/bin/ffmpeg.exe
-          Copy-Item $ffprobe packaging/bin/ffprobe.exe
-          & packaging/bin/ffmpeg.exe -version
-          & packaging/bin/ffprobe.exe -version
-
-      - name: Verify runtime dependencies
-        run: |
-          python -c "import yt_dlp, psutil; from importlib.metadata import version; print('yt-dlp', yt_dlp.version.__version__); print('WPC', version('yt-dlp-getpot-wpc')); print('psutil', psutil.__version__)"
+          python -c "import yt_dlp, psutil; from importlib.metadata import version; import importlib.util; assert importlib.util.find_spec('yt_dlp_plugins.extractor.getpot_wpc'); print('yt-dlp', yt_dlp.version.__version__); print('WPC', version('yt-dlp-getpot-wpc')); print('psutil', psutil.__version__)"
 
       - name: Build Windows executable
         shell: pwsh
@@ -67,8 +55,6 @@ jobs:
             --collect-submodules yt_dlp_plugins `
             --collect-all yt_dlp_plugins.extractor.getpot_wpc `
             --copy-metadata yt-dlp-getpot-wpc `
-            --add-binary "packaging/bin/ffmpeg.exe:." `
-            --add-binary "packaging/bin/ffprobe.exe:." `
             --name "YouTube-Downloader-Windows" `
             packaging/release_launcher.py
 
@@ -98,25 +84,15 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-build.txt
 
-      - name: Install and stage FFmpeg
+      - name: Verify build-time dependencies
         run: |
-          brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
-          mkdir -p packaging/bin
-          cp "$(command -v ffmpeg)" packaging/bin/ffmpeg
-          cp "$(command -v ffprobe)" packaging/bin/ffprobe
-          chmod +x packaging/bin/ffmpeg packaging/bin/ffprobe
-          packaging/bin/ffmpeg -version
-          packaging/bin/ffprobe -version
-
-      - name: Verify runtime dependencies
-        run: |
-          python -c "import yt_dlp, psutil; from importlib.metadata import version; print('yt-dlp', yt_dlp.version.__version__); print('WPC', version('yt-dlp-getpot-wpc')); print('psutil', psutil.__version__)"
+          python -c "import yt_dlp, psutil; from importlib.metadata import version; import importlib.util; assert importlib.util.find_spec('yt_dlp_plugins.extractor.getpot_wpc'); print('yt-dlp', yt_dlp.version.__version__); print('WPC', version('yt-dlp-getpot-wpc')); print('psutil', psutil.__version__)"
 
       - name: Build macOS app
         run: |
@@ -129,8 +105,6 @@ jobs:
             --collect-submodules yt_dlp_plugins \
             --collect-all yt_dlp_plugins.extractor.getpot_wpc \
             --copy-metadata yt-dlp-getpot-wpc \
-            --add-binary "packaging/bin/ffmpeg:." \
-            --add-binary "packaging/bin/ffprobe:." \
             --name "YouTube Downloader" \
             packaging/release_launcher.py
 
