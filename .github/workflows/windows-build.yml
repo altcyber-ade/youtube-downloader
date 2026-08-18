@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Existing tag to build and publish (for example v0.1.0)"
+        description: "Existing tag to build and publish (for example v0.2.0)"
         required: false
         type: string
   push:
@@ -38,6 +38,10 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-build.txt
 
+      - name: Verify PO-token provider import
+        run: |
+          python -c "import yt_dlp; import yt_dlp_plugins.extractor.getpot_wpc; print('yt-dlp', yt_dlp.version.__version__, 'WPC provider OK')"
+
       - name: Build executable
         run: >
           python -m PyInstaller
@@ -45,8 +49,9 @@ jobs:
           --clean
           --onefile
           --windowed
+          --collect-submodules yt_dlp_plugins
           --name "yt-dlp-MP3-Downloader"
-          yt_dlp_mp3_gui.py
+          youtube_downloader.py
 
       - name: Upload Actions artifact
         uses: actions/upload-artifact@v4
