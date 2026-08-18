@@ -14,12 +14,12 @@ metadata/thumbnail options, browser-cookie selection, progress reporting and can
 
 | Platform | Download | Notes |
 |---|---|---|
-| macOS | **[Download macOS app](https://github.com/altcyber-ade/youtube-downloader/releases/latest/download/YouTube-Downloader-macOS.zip)** | Unzip and open `YouTube Downloader.app`. FFmpeg/FFprobe are bundled. Chrome or Chromium is still required for automatic PO-token generation. |
-| Windows | **[Download Windows EXE](https://github.com/altcyber-ade/youtube-downloader/releases/latest/download/YouTube-Downloader-Windows.exe)** | Portable executable with FFmpeg/FFprobe bundled. Chrome or Chromium is still required for automatic PO-token generation. |
+| macOS | **[Download macOS app](https://github.com/altcyber-ade/youtube-downloader/releases/latest/download/YouTube-Downloader-macOS.zip)** | Unzip and open `YouTube Downloader.app`. Homebrew FFmpeg is detected automatically; Chrome or Chromium is required for automatic PO-token generation. |
+| Windows | **[Download Windows EXE](https://github.com/altcyber-ade/youtube-downloader/releases/latest/download/YouTube-Downloader-Windows.exe)** | Portable executable. FFmpeg must be installed and on `PATH`; Chrome or Chromium is required for automatic PO-token generation. |
 
 [View all releases](https://github.com/altcyber-ade/youtube-downloader/releases)
 
-The downloads above are generated automatically by GitHub Actions whenever a `v*` release tag is pushed. The workflow builds the app natively on macOS and Windows, smoke-tests the packaged runtime dependencies, and attaches both files to the matching GitHub Release.
+The downloads above are generated automatically by GitHub Actions whenever a `v*` release tag is pushed. The workflow builds the app natively on macOS and Windows, smoke-tests the packaged Python/PO-token dependencies, and attaches both files to the matching GitHub Release.
 
 ## YouTube compatibility (v0.2)
 
@@ -35,17 +35,16 @@ The PO-token provider automatically launches Chrome/Chromium briefly when yt-dlp
 
 ## Requirements
 
-For the downloadable macOS and Windows builds, FFmpeg and FFprobe are bundled. You only need Chrome or Chromium for the automatic PO-token provider.
+The downloadable desktop builds bundle the Python runtime, yt-dlp, the WPC PO-token provider and psutil. They do not redistribute FFmpeg.
 
-When running from source you need:
+You need:
 
-- Python 3.10 or newer
-- `yt-dlp[default]`
-- `yt-dlp-getpot-wpc`
-- `psutil`
 - Google Chrome or Chromium for automatic PO-token generation
-- FFmpeg available on your `PATH`
-- Tkinter
+- FFmpeg/FFprobe available on the system
+
+On macOS, the packaged app adds the standard Homebrew locations (`/opt/homebrew/bin` and `/usr/local/bin`) to its runtime `PATH`, so a normal `brew install ffmpeg` installation is found when the app is launched from Finder.
+
+When running from source you additionally need Python 3.10 or newer and Tkinter.
 
 ## Quick start from source
 
@@ -82,7 +81,7 @@ python -m pip install -r requirements.txt
 python youtube_downloader.py
 ```
 
-When running from source, FFmpeg must be installed separately and its `bin` directory must be on `PATH`. Chrome or Chromium is also required for the automatic PO-token provider. See [BUILD_WINDOWS.md](BUILD_WINDOWS.md).
+FFmpeg must be installed separately and its `bin` directory must be on `PATH`. Chrome or Chromium is also required for the automatic PO-token provider. See [BUILD_WINDOWS.md](BUILD_WINDOWS.md).
 
 ## Features
 
@@ -118,10 +117,10 @@ git push origin v0.2.4
 
 GitHub Actions then:
 
-1. installs and stages FFmpeg/FFprobe on each native runner,
-2. builds `YouTube-Downloader-Windows.exe` with the runtime dependencies and FFmpeg tools bundled,
-3. builds `YouTube Downloader.app` on macOS with the same bundled runtime dependencies,
-4. runs a packaged self-test checking yt-dlp, psutil, the WPC provider, FFmpeg and FFprobe,
+1. verifies yt-dlp, psutil and `yt-dlp-getpot-wpc` on each native runner,
+2. builds `YouTube-Downloader-Windows.exe` with the WPC plugin and its package metadata explicitly collected,
+3. builds `YouTube Downloader.app` on macOS with the same packaged dependencies and the Finder/Homebrew PATH runtime hook,
+4. runs a packaged self-test that verifies yt-dlp, psutil, WPC distribution metadata and WPC module discovery,
 5. packages the macOS application as `YouTube-Downloader-macOS.zip`, and
 6. creates or updates the GitHub Release and attaches both downloads.
 
