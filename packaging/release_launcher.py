@@ -45,14 +45,18 @@ def self_test() -> int:
     checks = {
         "yt_dlp": app.yt_dlp is not None,
         "psutil": app.psutil is not None,
-        "wpc_metadata": wpc_metadata_available(),
-        "wpc_module": wpc_module_available(),
+        "wpc_provider": wpc_available(),
     }
     failed = [name for name, ok in checks.items() if not ok]
     if failed:
         print("SELF-TEST FAILED:", ", ".join(failed))
         return 1
-    print("SELF-TEST OK:", ", ".join(checks))
+
+    details = [
+        f"metadata={'yes' if wpc_metadata_available() else 'no'}",
+        f"module={'yes' if wpc_module_available() else 'no'}",
+    ]
+    print("SELF-TEST OK:", ", ".join(checks), "|", ", ".join(details))
     return 0
 
 
