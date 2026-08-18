@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Existing tag to build and publish (for example v0.2.2)"
+        description: "Existing tag to build and publish (for example v0.2.4)"
         required: true
         type: string
 
@@ -32,26 +32,51 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-build.txt
 
+      - name: Install and stage FFmpeg
+        shell: pwsh
+        run: |
+          choco install ffmpeg -y --no-progress
+          $ffmpeg = (Get-Command ffmpeg.exe).Source
+          $ffprobe = (Get-Command ffprobe.exe).Source
+          New-Item -ItemType Directory -Force -Path packaging/bin | Out-Null
+          Copy-Item $ffmpeg packaging/bin/ffmpeg.exe
+          Copy-Item $ffprobe packaging/bin/ffprobe.exe
+          & packaging/bin/ffmpeg.exe -version
+          & packaging/bin/ffprobe.exe -version
+
       - name: Verify runtime dependencies
         run: |
-          python -c "import yt_dlp, psutil; import importlib.util; assert importlib.util.find_spec('yt_dlp_plugins.extractor.getpot_wpc'); print('Runtime dependencies OK')"
+          python -c "import yt_dlp, psutil; from importlib.metadata import version; print('yt-dlp', yt_dlp.version.__version__); print('WPC', version('yt-dlp-getpot-wpc')); print('psutil', psutil.__version__)"
 
       - name: Build Windows executable
-        run: >
-          python -m PyInstaller
-          --noconfirm
-          --clean
-          --onefile
-          --windowed
-          --collect-submodules yt_dlp_plugins
-          --name "YouTube-Downloader-Windows"
-          youtube_downloader.py
+        shell: pwsh
+        run: |
+          python -m PyInstaller `
+            --noconfirm `
+            --clean `
+            --onefile `
+            --windowed `
+            --paths . `
+            --runtime-hook packaging/macos_runtime_path.py `
+            --collect-submodules yt_dlp_plugins `
+            --collect-all yt_dlp_plugins.extractor.getpot_wpc `
+            --copy-metadata yt-dlp-getpot-wpc `
+            --add-binary "packaging/bin/ffmpeg.exe:." `
+            --add-binary "packaging/bin/ffprobe.exe:." `
+            --name "YouTube-Downloader-Windows" `
+            packaging/release_launcher.py
+
+      - name: Smoke-test Windows executable
+        shell: pwsh
+        run: |
+          & "dist/YouTube-Downloader-Windows.exe" --self-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -73,15 +98,25 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-build.txt
 
+      - name: Install and stage FFmpeg
+        run: |
+          brew list ffmpeg >/dev/null 2>&1 || brew install ffmpeg
+          mkdir -p packaging/bin
+          cp "$(command -v ffmpeg)" packaging/bin/ffmpeg
+          cp "$(command -v ffprobe)" packaging/bin/ffprobe
+          chmod +x packaging/bin/ffmpeg packaging/bin/ffprobe
+          packaging/bin/ffmpeg -version
+          packaging/bin/ffprobe -version
+
       - name: Verify runtime dependencies
         run: |
-          python -c "import yt_dlp, psutil; import importlib.util; assert importlib.util.find_spec('yt_dlp_plugins.extractor.getpot_wpc'); print('Runtime dependencies OK')"
+          python -c "import yt_dlp, psutil; from importlib.metadata import version; print('yt-dlp', yt_dlp.version.__version__); print('WPC', version('yt-dlp-getpot-wpc')); print('psutil', psutil.__version__)"
 
       - name: Build macOS app
         run: |
@@ -89,10 +124,19 @@ jobs:
             --noconfirm \
             --clean \
             --windowed \
+            --paths . \
             --runtime-hook packaging/macos_runtime_path.py \
             --collect-submodules yt_dlp_plugins \
+            --collect-all yt_dlp_plugins.extractor.getpot_wpc \
+            --copy-metadata yt-dlp-getpot-wpc \
+            --add-binary "packaging/bin/ffmpeg:." \
+            --add-binary "packaging/bin/ffprobe:." \
             --name "YouTube Downloader" \
-            youtube_downloader.py
+            packaging/release_launcher.py
+
+      - name: Smoke-test macOS app
+        run: |
+          "dist/YouTube Downloader.app/Contents/MacOS/YouTube Downloader" --self-test
 
       - name: Package macOS app
         run: |
