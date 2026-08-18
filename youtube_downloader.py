@@ -8,6 +8,7 @@ import platform
 import queue
 import re
 import shutil
+import tempfile
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -19,7 +20,12 @@ try:
 except ImportError:
     yt_dlp = None
 
-APP_VERSION = "0.2.1"
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
+APP_VERSION = "0.2.2"
 WPC_MODULE = "yt_dlp_plugins.extractor.getpot_wpc"
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -58,18 +64,20 @@ class MP3DownloaderApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(f"yt-dlp MP3 Downloader {APP_VERSION}")
-        self.geometry("820x815")
-        self.minsize(720, 690)
+        self.geometry("840x845")
+        self.minsize(740, 710)
 
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.worker: threading.Thread | None = None
         self.cancel_event = threading.Event()
+        self.browser_pids_before_download: set[int] = set()
 
         self.url_var = tk.StringVar()
         self.output_var = tk.StringVar(value=str(Path.home() / "Music"))
         self.quality_var = tk.StringVar(value="192")
         self.template_var = tk.StringVar(value="%(title)s [%(id)s].%(ext)s")
         self.cookies_var = tk.StringVar(value="None")
+
         self.playlist_var = tk.BooleanVar(value=False)
         self.metadata_var = tk.BooleanVar(value=True)
         self.thumbnail_var = tk.BooleanVar(value=True)
@@ -77,9 +85,12 @@ class MP3DownloaderApp(tk.Tk):
         self.overwrite_var = tk.BooleanVar(value=False)
         self.keep_video_var = tk.BooleanVar(value=False)
         self.subfolder_var = tk.BooleanVar(value=False)
+
         self.youtube_compat_var = tk.BooleanVar(value=True)
         self.force_ipv4_var = tk.BooleanVar(value=False)
         self.verbose_var = tk.BooleanVar(value=False)
+        self.close_token_browser_var = tk.BooleanVar(value=True)
+
         self.status_var = tk.StringVar(value="Ready")
         self.progress_text_var = tk.StringVar(value="0.0%")
 
@@ -130,6 +141,7 @@ class MP3DownloaderApp(tk.Tk):
             width=9,
         ).grid(row=1, column=0, sticky="w", pady=(4, 8))
         ttk.Label(settings, text="kbps").grid(row=1, column=1, sticky="w")
+
         ttk.Label(settings, text="Browser cookies").grid(row=0, column=2, sticky="w")
         ttk.Combobox(
             settings,
@@ -164,9 +176,25 @@ class MP3DownloaderApp(tk.Tk):
             text="Use mweb + automatic PO-token provider (recommended)",
             variable=self.youtube_compat_var,
         ).grid(row=0, column=0, sticky="w")
-        ttk.Checkbutton(compatibility, text="Force IPv4", variable=self.force_ipv4_var).grid(row=1, column=0, sticky="w", pady=(4, 0))
-        ttk.Checkbutton(compatibility, text="Verbose yt-dlp diagnostics", variable=self.verbose_var).grid(row=2, column=0, sticky="w", pady=(4, 0))
-        ttk.Label(compatibility, text="PO-token mode uses Chrome/Chromium briefly when YouTube requests a token.").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        ttk.Checkbutton(
+            compatibility,
+            text="Close PO-token browser after download",
+            variable=self.close_token_browser_var,
+        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Checkbutton(
+            compatibility,
+            text="Force IPv4",
+            variable=self.force_ipv4_var,
+        ).grid(row=2, column=0, sticky="w", pady=(4, 0))
+        ttk.Checkbutton(
+            compatibility,
+            text="Verbose yt-dlp diagnostics",
+            variable=self.verbose_var,
+        ).grid(row=3, column=0, sticky="w", pady=(4, 0))
+        ttk.Label(
+            compatibility,
+            text="Cleanup only targets a new Chrome/Chromium process using a temporary automation profile.",
+        ).grid(row=4, column=0, sticky="w", pady=(6, 0))
 
         progress_box = ttk.LabelFrame(outer, text="Progress", padding=12)
         progress_box.grid(row=5, column=0, sticky="nsew", pady=(12, 0))
@@ -178,7 +206,7 @@ class MP3DownloaderApp(tk.Tk):
         progress_row.columnconfigure(0, weight=1)
         self.progress = ttk.Progressbar(progress_row, maximum=100.0, mode="determinate", length=100)
         self.progress.grid(row=0, column=0, sticky="ew")
-        ttk.Label(progress_row, textvariable=self.progress_text_var, width=7, anchor="e").grid(row=0, column=1, padx=(8, 0))
+        ttk.Label(progress_row, textvariable=self.progress_text_var, width=8, anchor="e").grid(row=0, column=1, padx=(8, 0))
 
         ttk.Label(progress_box, textvariable=self.status_var).grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 8))
         ttk.Separator(progress_box, orient="horizontal").grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
@@ -205,7 +233,10 @@ class MP3DownloaderApp(tk.Tk):
         menu.add_command(label="Copy", command=lambda: entry.event_generate("<<Copy>>"))
         menu.add_command(label="Paste", command=lambda: entry.event_generate("<<Paste>>"))
         menu.add_separator()
-        menu.add_command(label="Select All", command=lambda: (entry.selection_range(0, "end"), entry.icursor("end")))
+        menu.add_command(
+            label="Select All",
+            command=lambda: (entry.selection_range(0, "end"), entry.icursor("end")),
+        )
 
         def show_menu(event: tk.Event) -> str:
             entry.focus_set()
@@ -266,13 +297,116 @@ class MP3DownloaderApp(tk.Tk):
                 r"C:\Program Files\Google\Chrome\Application\chrome.exe",
                 r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
             ]
-        return any(Path(p).exists() for p in paths) or bool(shutil.which("google-chrome") or shutil.which("chromium"))
+        return any(Path(p).exists() for p in paths) or bool(
+            shutil.which("google-chrome") or shutil.which("chromium")
+        )
 
     def _wpc_available(self) -> bool:
         try:
             return importlib.util.find_spec(WPC_MODULE) is not None
         except (ImportError, ModuleNotFoundError, AttributeError):
             return False
+
+    @staticmethod
+    def _is_chromium_process(proc: Any) -> bool:
+        try:
+            name = (proc.name() or "").lower()
+            exe = (proc.exe() or "").lower()
+            return any(token in name or token in exe for token in ("chrome", "chromium"))
+        except Exception:
+            return False
+
+    def _snapshot_browser_pids(self) -> set[int]:
+        if psutil is None:
+            return set()
+        pids: set[int] = set()
+        for proc in psutil.process_iter(["pid", "name", "exe"]):
+            try:
+                if self._is_chromium_process(proc):
+                    pids.add(proc.pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return pids
+
+    @staticmethod
+    def _automation_profile_from_cmdline(cmdline: list[str]) -> str | None:
+        for i, arg in enumerate(cmdline):
+            if arg.startswith("--user-data-dir="):
+                return arg.split("=", 1)[1].strip('"')
+            if arg == "--user-data-dir" and i + 1 < len(cmdline):
+                return cmdline[i + 1].strip('"')
+        return None
+
+    @staticmethod
+    def _profile_looks_temporary(profile: str) -> bool:
+        try:
+            profile_path = Path(profile).expanduser().resolve()
+            temp_root = Path(tempfile.gettempdir()).resolve()
+            if profile_path == temp_root or temp_root in profile_path.parents:
+                return True
+
+            text = str(profile_path).lower()
+            markers = ("nodriver", "getpot", "webpo", "wpc", "temporary", "/tmp/", "\\temp\\")
+            return any(marker in text for marker in markers)
+        except Exception:
+            return False
+
+    def _cleanup_token_browser(self) -> None:
+        if (
+            psutil is None
+            or not self.close_token_browser_var.get()
+            or not self.youtube_compat_var.get()
+        ):
+            return
+
+        candidates: dict[int, Any] = {}
+        for proc in psutil.process_iter(["pid", "name", "exe", "cmdline", "ppid"]):
+            try:
+                if proc.pid in self.browser_pids_before_download:
+                    continue
+                if not self._is_chromium_process(proc):
+                    continue
+                cmdline = proc.cmdline()
+                profile = self._automation_profile_from_cmdline(cmdline)
+                if profile and self._profile_looks_temporary(profile):
+                    candidates[proc.pid] = proc
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+
+        if not candidates:
+            self.events.put((
+                "log",
+                "PO-token browser cleanup: no safely identifiable temporary browser process found; nothing was closed.",
+            ))
+            return
+
+        all_targets: dict[int, Any] = dict(candidates)
+        for proc in list(candidates.values()):
+            try:
+                for child in proc.children(recursive=True):
+                    if child.pid not in self.browser_pids_before_download:
+                        all_targets[child.pid] = child
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        targets = list(all_targets.values())
+        for proc in targets:
+            try:
+                proc.terminate()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        _, alive = psutil.wait_procs(targets, timeout=2.0)
+        for proc in alive:
+            try:
+                proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        self.events.put((
+            "log",
+            f"PO-token browser cleanup: closed {len(targets)} temporary Chrome/Chromium process(es).",
+        ))
 
     def _validate_environment(self) -> bool:
         if yt_dlp is None:
@@ -281,6 +415,7 @@ class MP3DownloaderApp(tk.Tk):
                 "Install dependencies with:\n\npython -m pip install -U -r requirements.txt",
             )
             return False
+
         if shutil.which("ffmpeg") is None:
             if platform.system() == "Darwin":
                 hint = "Install FFmpeg with Homebrew:\n\nbrew install ffmpeg"
@@ -290,6 +425,15 @@ class MP3DownloaderApp(tk.Tk):
                 hint = "Install FFmpeg and make sure ffmpeg is on PATH."
             messagebox.showerror("FFmpeg is missing", hint)
             return False
+
+        if self.close_token_browser_var.get() and psutil is None:
+            messagebox.showerror(
+                "psutil is missing",
+                "Browser cleanup requires psutil.\n\nInstall/update dependencies:\n\n"
+                "python -m pip install -U -r requirements.txt",
+            )
+            return False
+
         if self.youtube_compat_var.get():
             if not self._wpc_available():
                 messagebox.showerror(
@@ -302,21 +446,25 @@ class MP3DownloaderApp(tk.Tk):
                 "The PO-token provider requires Chrome or Chromium. Continue anyway?",
             ):
                 return False
+
         return True
 
     def _start_download(self) -> None:
         if not self._validate_environment():
             return
+
         url = self.url_var.get().strip()
         if not url:
             messagebox.showwarning("URL required", "Paste a video or playlist URL.")
             return
+
         output = Path(self.output_var.get()).expanduser()
         try:
             output.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             messagebox.showerror("Invalid destination", str(exc))
             return
+
         template = self.template_var.get().strip()
         if not template:
             messagebox.showwarning("Filename template required", "Enter a filename template.")
@@ -325,17 +473,31 @@ class MP3DownloaderApp(tk.Tk):
         self.cancel_event.clear()
         self._set_progress(0.0)
         self.status_var.set("Starting…")
+
+        if self.close_token_browser_var.get() and self.youtube_compat_var.get():
+            self.browser_pids_before_download = self._snapshot_browser_pids()
+        else:
+            self.browser_pids_before_download = set()
+
         version = getattr(getattr(yt_dlp, "version", None), "__version__", "unknown")
         self._append_log(f"yt-dlp MP3 Downloader {APP_VERSION}")
         self._append_log(f"yt-dlp version: {version}")
         self._append_log(f"Destination: {output}")
+
         if self.youtube_compat_var.get():
             self._append_log("YouTube compatibility: mweb + WebPoClient PO-token provider")
+        if self.close_token_browser_var.get() and self.youtube_compat_var.get():
+            self._append_log("PO-token browser cleanup: enabled (temporary automation profiles only)")
         if self.force_ipv4_var.get():
             self._append_log("Network: forcing IPv4")
+
         self._set_running(True)
         options = self._build_options(output, template)
-        self.worker = threading.Thread(target=self._download_worker, args=(url, options), daemon=True)
+        self.worker = threading.Thread(
+            target=self._download_worker,
+            args=(url, options),
+            daemon=True,
+        )
         self.worker.start()
 
     def _build_options(self, output: Path, template: str) -> dict[str, Any]:
@@ -344,6 +506,7 @@ class MP3DownloaderApp(tk.Tk):
             if self.subfolder_var.get() and self.playlist_var.get()
             else str(output / template)
         )
+
         postprocessors: list[dict[str, Any]] = [
             {
                 "key": "FFmpegExtractAudio",
@@ -376,13 +539,16 @@ class MP3DownloaderApp(tk.Tk):
             "verbose": self.verbose_var.get(),
             "no_warnings": False,
         }
+
         if self.youtube_compat_var.get():
             options["extractor_args"] = {"youtube": {"player_client": ["mweb"]}}
         if self.force_ipv4_var.get():
             options["source_address"] = "0.0.0.0"
+
         browser = self.cookies_var.get().lower()
         if browser != "none":
             options["cookiesfrombrowser"] = (browser,)
+
         return options
 
     @staticmethod
@@ -410,6 +576,7 @@ class MP3DownloaderApp(tk.Tk):
                 return float(cleaned)
             except ValueError:
                 pass
+
         return None
 
     def _progress_hook(self, data: dict[str, Any]) -> None:
@@ -427,13 +594,24 @@ class MP3DownloaderApp(tk.Tk):
                 self.events.put(("progress", percent))
                 percent_label = f"{percent:.1f}%"
 
-            filename = Path(str(data.get("filename") or data.get("tmpfilename") or "")).name
+            filename = Path(
+                str(data.get("filename") or data.get("tmpfilename") or "")
+            ).name
             speed = str(data.get("_speed_str") or "").strip()
             eta = str(data.get("_eta_str") or "").strip()
             detail = " • ".join(
-                x for x in (percent_label, speed, f"ETA {eta}" if eta else "") if x
+                item
+                for item in (
+                    percent_label,
+                    speed,
+                    f"ETA {eta}" if eta else "",
+                )
+                if item
             )
-            self.events.put(("status", f"Downloading {filename}" + (f" — {detail}" if detail else "")))
+            self.events.put((
+                "status",
+                f"Downloading {filename}" + (f" — {detail}" if detail else ""),
+            ))
 
         elif status == "finished":
             self.events.put(("progress", 100.0))
@@ -442,6 +620,7 @@ class MP3DownloaderApp(tk.Tk):
     def _postprocessor_hook(self, data: dict[str, Any]) -> None:
         if self.cancel_event.is_set():
             raise DownloadCancelled()
+
         name = data.get("postprocessor", "Post-processing")
         if data.get("status") == "started":
             self.events.put(("status", f"{name}…"))
@@ -449,20 +628,35 @@ class MP3DownloaderApp(tk.Tk):
             self.events.put(("log", f"Finished: {name}"))
 
     def _download_worker(self, url: str, options: dict[str, Any]) -> None:
+        outcome: tuple[str, Any] | None = None
         try:
             assert yt_dlp is not None
             with yt_dlp.YoutubeDL(options) as downloader:
                 result = downloader.download([url])
+
             if self.cancel_event.is_set():
-                self.events.put(("cancelled", None))
+                outcome = ("cancelled", None)
             elif result == 0:
-                self.events.put(("complete", None))
+                outcome = ("complete", None)
             else:
-                self.events.put(("error", "One or more downloads failed."))
+                outcome = ("error", "One or more downloads failed.")
+
         except DownloadCancelled:
-            self.events.put(("cancelled", None))
+            outcome = ("cancelled", None)
         except Exception as exc:
-            self.events.put(("cancelled", None) if self.cancel_event.is_set() else ("error", str(exc)))
+            outcome = (
+                ("cancelled", None)
+                if self.cancel_event.is_set()
+                else ("error", str(exc))
+            )
+        finally:
+            try:
+                self._cleanup_token_browser()
+            except Exception as exc:
+                self.events.put(("log", f"PO-token browser cleanup warning: {exc}"))
+
+        if outcome is not None:
+            self.events.put(outcome)
 
     def _cancel_download(self) -> None:
         self.cancel_event.set()
@@ -474,26 +668,33 @@ class MP3DownloaderApp(tk.Tk):
         try:
             while True:
                 event, payload = self.events.get_nowait()
+
                 if event == "progress":
                     self._set_progress(float(payload))
+
                 elif event == "pulse":
                     self._set_indeterminate_progress()
+
                 elif event == "status":
                     self.status_var.set(str(payload))
+
                 elif event == "log":
                     self._append_log(str(payload))
+
                 elif event == "complete":
                     self._set_progress(100.0)
                     self.status_var.set("Finished")
                     self._append_log("All requested downloads finished.")
                     self._set_running(False)
                     messagebox.showinfo("Finished", "The MP3 download is complete.")
+
                 elif event == "cancelled":
                     self.progress.stop()
                     self.progress.configure(mode="determinate")
                     self.status_var.set("Cancelled")
                     self.progress_text_var.set("Cancelled")
                     self._set_running(False)
+
                 elif event == "error":
                     self.progress.stop()
                     self.progress.configure(mode="determinate")
@@ -502,13 +703,18 @@ class MP3DownloaderApp(tk.Tk):
                     self._append_log(f"Failed: {payload}")
                     self._set_running(False)
                     messagebox.showerror("Download failed", str(payload))
+
         except queue.Empty:
             pass
+
         self.after(75, self._process_events)
 
     def _on_close(self) -> None:
         if self.worker and self.worker.is_alive():
-            if not messagebox.askyesno("Quit?", "A download is active. Cancel it and close the app?"):
+            if not messagebox.askyesno(
+                "Quit?",
+                "A download is active. Cancel it and close the app?",
+            ):
                 return
             self.cancel_event.set()
         self.destroy()
