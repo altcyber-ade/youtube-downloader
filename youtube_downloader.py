@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import platform
 import queue
+import re
 import shutil
 import threading
 import tkinter as tk
@@ -17,13 +19,9 @@ try:
 except ImportError:
     yt_dlp = None
 
-# Import explicitly so PyInstaller can see the provider plugin.
-try:
-    import yt_dlp_plugins.extractor.getpot_wpc as _wpc_plugin  # noqa: F401
-except Exception:
-    _wpc_plugin = None
-
 APP_VERSION = "0.2.0"
+WPC_MODULE = "yt_dlp_plugins.extractor.getpot_wpc"
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 class DownloadCancelled(Exception):
@@ -95,7 +93,11 @@ class MP3DownloaderApp(tk.Tk):
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(5, weight=1)
 
-        ttk.Label(outer, text=f"yt-dlp MP3 Downloader {APP_VERSION}", font=("Helvetica Neue", 20, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 14))
+        ttk.Label(
+            outer,
+            text=f"yt-dlp MP3 Downloader {APP_VERSION}",
+            font=("Helvetica Neue", 20, "bold"),
+        ).grid(row=0, column=0, sticky="w", pady=(0, 14))
 
         source = ttk.LabelFrame(outer, text="Source", padding=12)
         source.grid(row=1, column=0, sticky="ew")
@@ -119,10 +121,22 @@ class MP3DownloaderApp(tk.Tk):
             settings.columnconfigure(col, weight=1)
 
         ttk.Label(settings, text="MP3 quality").grid(row=0, column=0, sticky="w")
-        ttk.Combobox(settings, textvariable=self.quality_var, values=("320", "256", "192", "160", "128"), state="readonly", width=9).grid(row=1, column=0, sticky="w", pady=(4, 8))
+        ttk.Combobox(
+            settings,
+            textvariable=self.quality_var,
+            values=("320", "256", "192", "160", "128"),
+            state="readonly",
+            width=9,
+        ).grid(row=1, column=0, sticky="w", pady=(4, 8))
         ttk.Label(settings, text="kbps").grid(row=1, column=1, sticky="w")
         ttk.Label(settings, text="Browser cookies").grid(row=0, column=2, sticky="w")
-        ttk.Combobox(settings, textvariable=self.cookies_var, values=("None", "Safari", "Chrome", "Firefox", "Brave"), state="readonly", width=12).grid(row=1, column=2, columnspan=2, sticky="w", pady=(4, 8))
+        ttk.Combobox(
+            settings,
+            textvariable=self.cookies_var,
+            values=("None", "Safari", "Chrome", "Firefox", "Brave"),
+            state="readonly",
+            width=12,
+        ).grid(row=1, column=2, columnspan=2, sticky="w", pady=(4, 8))
 
         checks = [
             ("Download playlist", self.playlist_var),
@@ -134,11 +148,21 @@ class MP3DownloaderApp(tk.Tk):
             ("Playlist-named subfolder", self.subfolder_var),
         ]
         for i, (label, variable) in enumerate(checks):
-            ttk.Checkbutton(settings, text=label, variable=variable).grid(row=2 + i // 2, column=(i % 2) * 2, columnspan=2, sticky="w", pady=3)
+            ttk.Checkbutton(settings, text=label, variable=variable).grid(
+                row=2 + i // 2,
+                column=(i % 2) * 2,
+                columnspan=2,
+                sticky="w",
+                pady=3,
+            )
 
         compatibility = ttk.LabelFrame(outer, text="YouTube compatibility", padding=12)
         compatibility.grid(row=4, column=0, sticky="ew", pady=(12, 0))
-        ttk.Checkbutton(compatibility, text="Use mweb + automatic PO-token provider (recommended)", variable=self.youtube_compat_var).grid(row=0, column=0, sticky="w")
+        ttk.Checkbutton(
+            compatibility,
+            text="Use mweb + automatic PO-token provider (recommended)",
+            variable=self.youtube_compat_var,
+        ).grid(row=0, column=0, sticky="w")
         ttk.Checkbutton(compatibility, text="Force IPv4", variable=self.force_ipv4_var).grid(row=1, column=0, sticky="w", pady=(4, 0))
         ttk.Checkbutton(compatibility, text="Verbose yt-dlp diagnostics", variable=self.verbose_var).grid(row=2, column=0, sticky="w", pady=(4, 0))
         ttk.Label(compatibility, text="PO-token mode uses Chrome/Chromium briefly when YouTube requests a token.").grid(row=3, column=0, sticky="w", pady=(6, 0))
@@ -199,9 +223,23 @@ class MP3DownloaderApp(tk.Tk):
             ]
         return any(Path(p).exists() for p in paths) or bool(shutil.which("google-chrome") or shutil.which("chromium"))
 
+    def _wpc_available(self) -> bool:
+        """Check for the plugin without importing it a second time.
+
+        yt-dlp discovers and imports plugins itself. Explicitly importing the WPC
+        plugin here registers the provider twice and triggers an assertion.
+        """
+        try:
+            return importlib.util.find_spec(WPC_MODULE) is not None
+        except (ImportError, ModuleNotFoundError, AttributeError):
+            return False
+
     def _validate_environment(self) -> bool:
         if yt_dlp is None:
-            messagebox.showerror("yt-dlp is missing", "Install dependencies with:\n\npython -m pip install -U -r requirements.txt")
+            messagebox.showerror(
+                "yt-dlp is missing",
+                "Install dependencies with:\n\npython -m pip install -U -r requirements.txt",
+            )
             return False
         if shutil.which("ffmpeg") is None:
             if platform.system() == "Darwin":
@@ -213,10 +251,16 @@ class MP3DownloaderApp(tk.Tk):
             messagebox.showerror("FFmpeg is missing", hint)
             return False
         if self.youtube_compat_var.get():
-            if _wpc_plugin is None:
-                messagebox.showerror("PO-token provider is missing", "Install/update dependencies:\n\npython -m pip install -U -r requirements.txt")
+            if not self._wpc_available():
+                messagebox.showerror(
+                    "PO-token provider is missing",
+                    "Install/update dependencies:\n\npython -m pip install -U -r requirements.txt",
+                )
                 return False
-            if not self._chrome_available() and not messagebox.askyesno("Chrome/Chromium not detected", "The PO-token provider requires Chrome or Chromium. Continue anyway?"):
+            if not self._chrome_available() and not messagebox.askyesno(
+                "Chrome/Chromium not detected",
+                "The PO-token provider requires Chrome or Chromium. Continue anyway?",
+            ):
                 return False
         return True
 
@@ -239,6 +283,8 @@ class MP3DownloaderApp(tk.Tk):
             return
 
         self.cancel_event.clear()
+        self.progress.stop()
+        self.progress.configure(mode="determinate")
         self.progress_var.set(0)
         self.status_var.set("Starting…")
         version = getattr(getattr(yt_dlp, "version", None), "__version__", "unknown")
@@ -255,8 +301,18 @@ class MP3DownloaderApp(tk.Tk):
         self.worker.start()
 
     def _build_options(self, output: Path, template: str) -> dict[str, Any]:
-        output_template = str(output / "%(playlist_title|Playlist)s" / template) if self.subfolder_var.get() and self.playlist_var.get() else str(output / template)
-        postprocessors: list[dict[str, Any]] = [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": self.quality_var.get()}]
+        output_template = (
+            str(output / "%(playlist_title|Playlist)s" / template)
+            if self.subfolder_var.get() and self.playlist_var.get()
+            else str(output / template)
+        )
+        postprocessors: list[dict[str, Any]] = [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": self.quality_var.get(),
+            }
+        ]
         if self.metadata_var.get():
             postprocessors.append({"key": "FFmpegMetadata"})
         if self.thumbnail_var.get():
@@ -291,22 +347,51 @@ class MP3DownloaderApp(tk.Tk):
             options["cookiesfrombrowser"] = (browser,)
         return options
 
+    @staticmethod
+    def _progress_percent(data: dict[str, Any]) -> float | None:
+        downloaded = data.get("downloaded_bytes")
+        total = data.get("total_bytes") or data.get("total_bytes_estimate")
+        if downloaded is not None and total:
+            return max(0.0, min(100.0, float(downloaded) * 100.0 / float(total)))
+
+        fragment_index = data.get("fragment_index")
+        fragment_count = data.get("fragment_count")
+        if fragment_index is not None and fragment_count:
+            return max(0.0, min(100.0, float(fragment_index) * 100.0 / float(fragment_count)))
+
+        percent_text = data.get("_percent_str")
+        if percent_text:
+            cleaned = ANSI_RE.sub("", str(percent_text)).strip().rstrip("%").strip()
+            try:
+                return max(0.0, min(100.0, float(cleaned)))
+            except ValueError:
+                pass
+        return None
+
     def _progress_hook(self, data: dict[str, Any]) -> None:
         if self.cancel_event.is_set():
             raise DownloadCancelled()
+
         status = data.get("status")
         if status == "downloading":
-            downloaded = data.get("downloaded_bytes", 0)
-            total = data.get("total_bytes") or data.get("total_bytes_estimate")
-            filename = Path(data.get("filename", "")).name
-            if total:
-                self.events.put(("progress", max(0.0, min(100.0, downloaded * 100.0 / total))))
-            else:
+            percent = self._progress_percent(data)
+            if percent is None:
                 self.events.put(("pulse", None))
-            speed = data.get("_speed_str", "").strip()
-            eta = data.get("_eta_str", "").strip()
-            detail = " • ".join(x for x in (speed, f"ETA {eta}" if eta else "") if x)
-            self.events.put(("status", f"Downloading {filename}" + (f" — {detail}" if detail else "")))
+                percent_label = ""
+            else:
+                self.events.put(("progress", percent))
+                percent_label = f"{percent:5.1f}%"
+
+            filename = Path(data.get("filename", "")).name
+            speed = str(data.get("_speed_str", "")).strip()
+            eta = str(data.get("_eta_str", "")).strip()
+            detail = " • ".join(
+                x for x in (percent_label, speed, f"ETA {eta}" if eta else "") if x
+            )
+            self.events.put(
+                ("status", f"Downloading {filename}" + (f" — {detail}" if detail else ""))
+            )
+
         elif status == "finished":
             self.events.put(("progress", 100.0))
             self.events.put(("status", "Download complete; converting to MP3…"))
@@ -347,22 +432,37 @@ class MP3DownloaderApp(tk.Tk):
             while True:
                 event, payload = self.events.get_nowait()
                 if event == "progress":
-                    self.progress.stop(); self.progress.configure(mode="determinate"); self.progress_var.set(float(payload))
+                    self.progress.stop()
+                    self.progress.configure(mode="determinate")
+                    self.progress_var.set(float(payload))
                 elif event == "pulse":
                     if str(self.progress.cget("mode")) != "indeterminate":
-                        self.progress.configure(mode="indeterminate"); self.progress.start(12)
+                        self.progress.configure(mode="indeterminate")
+                        self.progress.start(12)
                 elif event == "status":
                     self.status_var.set(str(payload))
                 elif event == "log":
                     self._append_log(str(payload))
                 elif event == "complete":
-                    self.progress.stop(); self.progress.configure(mode="determinate"); self.progress_var.set(100)
-                    self.status_var.set("Finished"); self._append_log("All requested downloads finished."); self._set_running(False)
+                    self.progress.stop()
+                    self.progress.configure(mode="determinate")
+                    self.progress_var.set(100)
+                    self.status_var.set("Finished")
+                    self._append_log("All requested downloads finished.")
+                    self._set_running(False)
                     messagebox.showinfo("Finished", "The MP3 download is complete.")
                 elif event == "cancelled":
-                    self.progress.stop(); self.progress.configure(mode="determinate"); self.status_var.set("Cancelled"); self._append_log("Download cancelled."); self._set_running(False)
+                    self.progress.stop()
+                    self.progress.configure(mode="determinate")
+                    self.status_var.set("Cancelled")
+                    self._append_log("Download cancelled.")
+                    self._set_running(False)
                 elif event == "error":
-                    self.progress.stop(); self.progress.configure(mode="determinate"); self.status_var.set("Failed"); self._append_log(f"Failed: {payload}"); self._set_running(False)
+                    self.progress.stop()
+                    self.progress.configure(mode="determinate")
+                    self.status_var.set("Failed")
+                    self._append_log(f"Failed: {payload}")
+                    self._set_running(False)
                     messagebox.showerror("Download failed", str(payload))
         except queue.Empty:
             pass
