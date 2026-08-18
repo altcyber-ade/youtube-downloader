@@ -19,7 +19,7 @@ try:
 except ImportError:
     yt_dlp = None
 
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.2.1"
 WPC_MODULE = "yt_dlp_plugins.extractor.getpot_wpc"
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -58,8 +58,8 @@ class MP3DownloaderApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(f"yt-dlp MP3 Downloader {APP_VERSION}")
-        self.geometry("820x800")
-        self.minsize(720, 680)
+        self.geometry("820x815")
+        self.minsize(720, 690)
 
         self.events: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.worker: threading.Thread | None = None
@@ -81,10 +81,10 @@ class MP3DownloaderApp(tk.Tk):
         self.force_ipv4_var = tk.BooleanVar(value=False)
         self.verbose_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Ready")
-        self.progress_var = tk.DoubleVar(value=0.0)
+        self.progress_text_var = tk.StringVar(value="0.0%")
 
         self._build_ui()
-        self.after(100, self._process_events)
+        self.after(75, self._process_events)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_ui(self) -> None:
@@ -105,6 +105,7 @@ class MP3DownloaderApp(tk.Tk):
         ttk.Label(source, text="Video or playlist URL").grid(row=0, column=0, sticky="w")
         self.url_entry = ttk.Entry(source, textvariable=self.url_var)
         self.url_entry.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        self._add_entry_context_menu(self.url_entry)
 
         destination = ttk.LabelFrame(outer, text="Destination", padding=12)
         destination.grid(row=2, column=0, sticky="ew", pady=(12, 0))
@@ -170,15 +171,23 @@ class MP3DownloaderApp(tk.Tk):
         progress_box = ttk.LabelFrame(outer, text="Progress", padding=12)
         progress_box.grid(row=5, column=0, sticky="nsew", pady=(12, 0))
         progress_box.columnconfigure(0, weight=1)
-        progress_box.rowconfigure(2, weight=1)
-        self.progress = ttk.Progressbar(progress_box, variable=self.progress_var, maximum=100, mode="determinate")
+        progress_box.rowconfigure(3, weight=1)
+
+        progress_row = ttk.Frame(progress_box)
+        progress_row.grid(row=0, column=0, columnspan=2, sticky="ew")
+        progress_row.columnconfigure(0, weight=1)
+        self.progress = ttk.Progressbar(progress_row, maximum=100.0, mode="determinate", length=100)
         self.progress.grid(row=0, column=0, sticky="ew")
-        ttk.Label(progress_box, textvariable=self.status_var).grid(row=1, column=0, sticky="w", pady=(6, 8))
+        ttk.Label(progress_row, textvariable=self.progress_text_var, width=7, anchor="e").grid(row=0, column=1, padx=(8, 0))
+
+        ttk.Label(progress_box, textvariable=self.status_var).grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 8))
+        ttk.Separator(progress_box, orient="horizontal").grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+
         log_font = "Menlo" if platform.system() == "Darwin" else "TkFixedFont"
         self.log = tk.Text(progress_box, height=11, wrap="word", state="disabled", font=(log_font, 10))
-        self.log.grid(row=2, column=0, sticky="nsew")
+        self.log.grid(row=3, column=0, sticky="nsew")
         scrollbar = ttk.Scrollbar(progress_box, orient="vertical", command=self.log.yview)
-        scrollbar.grid(row=2, column=1, sticky="ns")
+        scrollbar.grid(row=3, column=1, sticky="ns")
         self.log.configure(yscrollcommand=scrollbar.set)
 
         actions = ttk.Frame(outer)
@@ -189,6 +198,26 @@ class MP3DownloaderApp(tk.Tk):
         self.cancel_button = ttk.Button(actions, text="Cancel", command=self._cancel_download, state="disabled")
         self.cancel_button.grid(row=0, column=2, padx=(8, 0))
         self.url_entry.focus_set()
+
+    def _add_entry_context_menu(self, entry: ttk.Entry) -> None:
+        menu = tk.Menu(self, tearoff=False)
+        menu.add_command(label="Cut", command=lambda: entry.event_generate("<<Cut>>"))
+        menu.add_command(label="Copy", command=lambda: entry.event_generate("<<Copy>>"))
+        menu.add_command(label="Paste", command=lambda: entry.event_generate("<<Paste>>"))
+        menu.add_separator()
+        menu.add_command(label="Select All", command=lambda: (entry.selection_range(0, "end"), entry.icursor("end")))
+
+        def show_menu(event: tk.Event) -> str:
+            entry.focus_set()
+            try:
+                menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                menu.grab_release()
+            return "break"
+
+        entry.bind("<Button-3>", show_menu)
+        entry.bind("<Button-2>", show_menu)
+        entry.bind("<Control-Button-1>", show_menu)
 
     def _choose_folder(self) -> None:
         selected = filedialog.askdirectory(initialdir=self.output_var.get() or str(Path.home()))
@@ -209,6 +238,22 @@ class MP3DownloaderApp(tk.Tk):
         self.cancel_button.configure(state="normal" if running else "disabled")
         self.url_entry.configure(state="disabled" if running else "normal")
 
+    def _set_progress(self, percent: float) -> None:
+        percent = max(0.0, min(100.0, float(percent)))
+        self.progress.stop()
+        self.progress.configure(mode="determinate")
+        self.progress["value"] = percent
+        self.progress_text_var.set(f"{percent:.1f}%")
+        self.update_idletasks()
+
+    def _set_indeterminate_progress(self) -> None:
+        if str(self.progress.cget("mode")) != "indeterminate":
+            self.progress.stop()
+            self.progress.configure(mode="indeterminate")
+            self.progress["value"] = 0
+            self.progress_text_var.set("…")
+            self.progress.start(10)
+
     def _chrome_available(self) -> bool:
         paths: list[str] = []
         if platform.system() == "Darwin":
@@ -224,11 +269,6 @@ class MP3DownloaderApp(tk.Tk):
         return any(Path(p).exists() for p in paths) or bool(shutil.which("google-chrome") or shutil.which("chromium"))
 
     def _wpc_available(self) -> bool:
-        """Check for the plugin without importing it a second time.
-
-        yt-dlp discovers and imports plugins itself. Explicitly importing the WPC
-        plugin here registers the provider twice and triggers an assertion.
-        """
         try:
             return importlib.util.find_spec(WPC_MODULE) is not None
         except (ImportError, ModuleNotFoundError, AttributeError):
@@ -283,9 +323,7 @@ class MP3DownloaderApp(tk.Tk):
             return
 
         self.cancel_event.clear()
-        self.progress.stop()
-        self.progress.configure(mode="determinate")
-        self.progress_var.set(0)
+        self._set_progress(0.0)
         self.status_var.set("Starting…")
         version = getattr(getattr(yt_dlp, "version", None), "__version__", "unknown")
         self._append_log(f"yt-dlp MP3 Downloader {APP_VERSION}")
@@ -352,18 +390,24 @@ class MP3DownloaderApp(tk.Tk):
         downloaded = data.get("downloaded_bytes")
         total = data.get("total_bytes") or data.get("total_bytes_estimate")
         if downloaded is not None and total:
-            return max(0.0, min(100.0, float(downloaded) * 100.0 / float(total)))
+            try:
+                return float(downloaded) * 100.0 / float(total)
+            except (TypeError, ValueError, ZeroDivisionError):
+                pass
 
         fragment_index = data.get("fragment_index")
         fragment_count = data.get("fragment_count")
         if fragment_index is not None and fragment_count:
-            return max(0.0, min(100.0, float(fragment_index) * 100.0 / float(fragment_count)))
+            try:
+                return float(fragment_index) * 100.0 / float(fragment_count)
+            except (TypeError, ValueError, ZeroDivisionError):
+                pass
 
         percent_text = data.get("_percent_str")
         if percent_text:
             cleaned = ANSI_RE.sub("", str(percent_text)).strip().rstrip("%").strip()
             try:
-                return max(0.0, min(100.0, float(cleaned)))
+                return float(cleaned)
             except ValueError:
                 pass
         return None
@@ -379,18 +423,17 @@ class MP3DownloaderApp(tk.Tk):
                 self.events.put(("pulse", None))
                 percent_label = ""
             else:
+                percent = max(0.0, min(100.0, percent))
                 self.events.put(("progress", percent))
-                percent_label = f"{percent:5.1f}%"
+                percent_label = f"{percent:.1f}%"
 
-            filename = Path(data.get("filename", "")).name
-            speed = str(data.get("_speed_str", "")).strip()
-            eta = str(data.get("_eta_str", "")).strip()
+            filename = Path(str(data.get("filename") or data.get("tmpfilename") or "")).name
+            speed = str(data.get("_speed_str") or "").strip()
+            eta = str(data.get("_eta_str") or "").strip()
             detail = " • ".join(
                 x for x in (percent_label, speed, f"ETA {eta}" if eta else "") if x
             )
-            self.events.put(
-                ("status", f"Downloading {filename}" + (f" — {detail}" if detail else ""))
-            )
+            self.events.put(("status", f"Downloading {filename}" + (f" — {detail}" if detail else "")))
 
         elif status == "finished":
             self.events.put(("progress", 100.0))
@@ -432,21 +475,15 @@ class MP3DownloaderApp(tk.Tk):
             while True:
                 event, payload = self.events.get_nowait()
                 if event == "progress":
-                    self.progress.stop()
-                    self.progress.configure(mode="determinate")
-                    self.progress_var.set(float(payload))
+                    self._set_progress(float(payload))
                 elif event == "pulse":
-                    if str(self.progress.cget("mode")) != "indeterminate":
-                        self.progress.configure(mode="indeterminate")
-                        self.progress.start(12)
+                    self._set_indeterminate_progress()
                 elif event == "status":
                     self.status_var.set(str(payload))
                 elif event == "log":
                     self._append_log(str(payload))
                 elif event == "complete":
-                    self.progress.stop()
-                    self.progress.configure(mode="determinate")
-                    self.progress_var.set(100)
+                    self._set_progress(100.0)
                     self.status_var.set("Finished")
                     self._append_log("All requested downloads finished.")
                     self._set_running(False)
@@ -455,18 +492,19 @@ class MP3DownloaderApp(tk.Tk):
                     self.progress.stop()
                     self.progress.configure(mode="determinate")
                     self.status_var.set("Cancelled")
-                    self._append_log("Download cancelled.")
+                    self.progress_text_var.set("Cancelled")
                     self._set_running(False)
                 elif event == "error":
                     self.progress.stop()
                     self.progress.configure(mode="determinate")
                     self.status_var.set("Failed")
+                    self.progress_text_var.set("Failed")
                     self._append_log(f"Failed: {payload}")
                     self._set_running(False)
                     messagebox.showerror("Download failed", str(payload))
         except queue.Empty:
             pass
-        self.after(100, self._process_events)
+        self.after(75, self._process_events)
 
     def _on_close(self) -> None:
         if self.worker and self.worker.is_alive():
