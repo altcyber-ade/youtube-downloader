@@ -1,6 +1,6 @@
 # yt-dlp MP3 Downloader GUI
 
-A small cross-platform Python/Tkinter GUI around **yt-dlp** for extracting audio to MP3.
+A cross-platform Python/Tkinter GUI around **yt-dlp** for extracting audio to MP3.
 
 The app provides a URL field, destination picker, MP3 quality selection, playlist support,
 metadata/thumbnail options, browser-cookie selection, progress reporting and cancellation.
@@ -8,14 +8,26 @@ metadata/thumbnail options, browser-cookie selection, progress reporting and can
 > Use this software only for media you own or are authorised to download. You are responsible
 > for complying with the terms of the services you use and with applicable copyright law.
 
+## YouTube compatibility (v0.2)
+
+YouTube increasingly requires Proof-of-Origin (PO) tokens for media requests. Version 0.2 adds:
+
+- the `mweb` YouTube client
+- automatic PO-token generation through `yt-dlp-getpot-wpc`
+- an optional IPv4 fallback
+- improved yt-dlp/YouTube diagnostics in the GUI
+
+The PO-token provider automatically launches Chrome/Chromium briefly when yt-dlp requests a token.
+Do not close that browser while the token is being generated.
+
 ## Requirements
 
 - Python 3.10 or newer
-- `yt-dlp`
+- `yt-dlp[default]`
+- `yt-dlp-getpot-wpc`
+- Google Chrome or Chromium for automatic PO-token generation
 - FFmpeg available on your `PATH`
 - Tkinter
-
-yt-dlp recommends FFmpeg/ffprobe for post-processing, which this application requires for MP3 output.
 
 ## Quick start
 
@@ -31,11 +43,12 @@ python -m pip install -U pip
 python -m pip install -r requirements.txt
 
 brew install ffmpeg
-python yt_dlp_mp3_gui.py
+python youtube_downloader.py
 ```
 
-If Python was installed from python.org on macOS and HTTPS certificate verification fails,
-run the `Install Certificates.command` included in `/Applications/Python 3.x/`.
+Install Chrome or Chromium if you do not already have one. If Python was installed from
+python.org on macOS and HTTPS certificate verification fails, run the
+`Install Certificates.command` included in `/Applications/Python 3.x/`.
 
 ### Windows
 
@@ -48,11 +61,12 @@ py -m venv .venv
 python -m pip install -U pip
 python -m pip install -r requirements.txt
 
-python yt_dlp_mp3_gui.py
+python youtube_downloader.py
 ```
 
-FFmpeg must be installed separately and its `bin` directory must be on `PATH`.
-See [BUILD_WINDOWS.md](BUILD_WINDOWS.md).
+FFmpeg must be installed separately and its `bin` directory must be on `PATH`. Chrome or
+Chromium is also required for the automatic PO-token provider. See
+[BUILD_WINDOWS.md](BUILD_WINDOWS.md).
 
 ## Features
 
@@ -63,6 +77,9 @@ See [BUILD_WINDOWS.md](BUILD_WINDOWS.md).
 - Custom yt-dlp filename template
 - Embed metadata and thumbnails
 - Browser-cookie support for Safari, Chrome, Firefox and Brave
+- Recommended `mweb` + automatic PO-token mode
+- Optional Force IPv4 fallback
+- Optional verbose yt-dlp diagnostics
 - Restrict filenames
 - Overwrite existing files
 - Keep original downloaded media
@@ -77,11 +94,18 @@ See [BUILD_WINDOWS.md](BUILD_WINDOWS.md).
 
 Build the Windows `.exe` on Windows and the macOS `.app` on macOS.
 
-## Updating yt-dlp
+## Updating yt-dlp and the PO-token provider
 
 ```bash
-python -m pip install -U "yt-dlp[default]"
+python -m pip install -U -r requirements.txt
 ```
+
+YouTube changes frequently, so updating the dependencies is a useful first troubleshooting step.
+
+## Legacy v0.1 source
+
+`yt_dlp_mp3_gui.py` is retained for the v0.1 history. The current application entry point is
+`youtube_downloader.py`.
 
 ## License
 
