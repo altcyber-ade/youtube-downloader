@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Existing tag to build and publish (for example v0.2.4)"
+        description: "Existing tag to build and publish (for example v0.2.5)"
         required: true
         type: string
 
@@ -37,10 +37,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-build.txt
+          python -m pip install Pillow
 
       - name: Verify build-time dependencies
         run: |
           python -c "import yt_dlp, psutil; from importlib.metadata import version; import importlib.util; assert importlib.util.find_spec('yt_dlp_plugins.extractor.getpot_wpc'); print('yt-dlp', yt_dlp.version.__version__); print('WPC', version('yt-dlp-getpot-wpc')); print('psutil', psutil.__version__)"
+
+      - name: Create Windows icon
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "assets/app-icon.png")) { throw "assets/app-icon.png is missing" }
+          python -c "from PIL import Image; im=Image.open('assets/app-icon.png').convert('RGBA'); im.save('packaging/app-icon.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
 
       - name: Build Windows executable
         shell: pwsh
@@ -51,6 +58,7 @@ jobs:
             --onefile `
             --windowed `
             --paths . `
+            --icon packaging/app-icon.ico `
             --runtime-hook packaging/macos_runtime_path.py `
             --collect-submodules yt_dlp_plugins `
             --collect-all yt_dlp_plugins.extractor.getpot_wpc `
@@ -94,6 +102,23 @@ jobs:
         run: |
           python -c "import yt_dlp, psutil; from importlib.metadata import version; import importlib.util; assert importlib.util.find_spec('yt_dlp_plugins.extractor.getpot_wpc'); print('yt-dlp', yt_dlp.version.__version__); print('WPC', version('yt-dlp-getpot-wpc')); print('psutil', psutil.__version__)"
 
+      - name: Create macOS icon
+        run: |
+          test -f assets/app-icon.png
+          rm -rf packaging/app-icon.iconset
+          mkdir -p packaging/app-icon.iconset
+          sips -z 16 16     assets/app-icon.png --out packaging/app-icon.iconset/icon_16x16.png
+          sips -z 32 32     assets/app-icon.png --out packaging/app-icon.iconset/icon_16x16@2x.png
+          sips -z 32 32     assets/app-icon.png --out packaging/app-icon.iconset/icon_32x32.png
+          sips -z 64 64     assets/app-icon.png --out packaging/app-icon.iconset/icon_32x32@2x.png
+          sips -z 128 128   assets/app-icon.png --out packaging/app-icon.iconset/icon_128x128.png
+          sips -z 256 256   assets/app-icon.png --out packaging/app-icon.iconset/icon_128x128@2x.png
+          sips -z 256 256   assets/app-icon.png --out packaging/app-icon.iconset/icon_256x256.png
+          sips -z 512 512   assets/app-icon.png --out packaging/app-icon.iconset/icon_256x256@2x.png
+          sips -z 512 512   assets/app-icon.png --out packaging/app-icon.iconset/icon_512x512.png
+          sips -z 1024 1024 assets/app-icon.png --out packaging/app-icon.iconset/icon_512x512@2x.png
+          iconutil -c icns packaging/app-icon.iconset -o packaging/app-icon.icns
+
       - name: Build macOS app
         run: |
           python -m PyInstaller \
@@ -101,6 +126,7 @@ jobs:
             --clean \
             --windowed \
             --paths . \
+            --icon packaging/app-icon.icns \
             --runtime-hook packaging/macos_runtime_path.py \
             --collect-submodules yt_dlp_plugins \
             --collect-all yt_dlp_plugins.extractor.getpot_wpc \
