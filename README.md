@@ -1,5 +1,7 @@
 # yt-dlp MP3 Downloader GUI
 
+[![Build and release desktop apps](https://github.com/altcyber-ade/youtube-downloader/actions/workflows/release-build.yml/badge.svg)](https://github.com/altcyber-ade/youtube-downloader/actions/workflows/release-build.yml)
+
 A cross-platform Python/Tkinter GUI around **yt-dlp** for extracting audio to MP3.
 
 The app provides a URL field, destination picker, MP3 quality selection, playlist support,
@@ -7,6 +9,17 @@ metadata/thumbnail options, browser-cookie selection, progress reporting and can
 
 > Use this software only for media you own or are authorised to download. You are responsible
 > for complying with the terms of the services you use and with applicable copyright law.
+
+## Download the latest desktop builds
+
+| Platform | Download | Notes |
+|---|---|---|
+| macOS | **[Download macOS app](https://github.com/altcyber-ade/youtube-downloader/releases/latest/download/YouTube-Downloader-macOS.zip)** | Unzip and open `YouTube Downloader.app`. FFmpeg and Chrome/Chromium are still required on the Mac. |
+| Windows | **[Download Windows EXE](https://github.com/altcyber-ade/youtube-downloader/releases/latest/download/YouTube-Downloader-Windows.exe)** | Portable executable. FFmpeg and Chrome/Chromium are still required on the PC. |
+
+[View all releases](https://github.com/altcyber-ade/youtube-downloader/releases)
+
+The downloads above are generated automatically by GitHub Actions whenever a `v*` release tag is pushed. The workflow builds the app natively on macOS and Windows and attaches both files to the matching GitHub Release.
 
 ## YouTube compatibility (v0.2)
 
@@ -16,20 +29,20 @@ YouTube increasingly requires Proof-of-Origin (PO) tokens for media requests. Ve
 - automatic PO-token generation through `yt-dlp-getpot-wpc`
 - an optional IPv4 fallback
 - improved yt-dlp/YouTube diagnostics in the GUI
+- automatic cleanup of safely identifiable temporary PO-token Chrome/Chromium processes
 
-The PO-token provider automatically launches Chrome/Chromium briefly when yt-dlp requests a token.
-Do not close that browser while the token is being generated.
+The PO-token provider automatically launches Chrome/Chromium briefly when yt-dlp requests a token. The downloader can close the temporary automation browser afterward when it can identify that process safely; it does not intentionally terminate your normal Chrome session.
 
 ## Requirements
 
-- Python 3.10 or newer
+- Python 3.10 or newer when running from source
 - `yt-dlp[default]`
 - `yt-dlp-getpot-wpc`
 - Google Chrome or Chromium for automatic PO-token generation
 - FFmpeg available on your `PATH`
-- Tkinter
+- Tkinter when running from source
 
-## Quick start
+## Quick start from source
 
 ### macOS
 
@@ -74,25 +87,45 @@ Chromium is also required for the automatic PO-token provider. See
 - Select 128, 160, 192, 256 or 320 kbps target quality
 - Download a single item or an entire playlist
 - Choose an output folder
+- Right-click URL field with Cut / Copy / Paste / Select All
 - Custom yt-dlp filename template
 - Embed metadata and thumbnails
 - Browser-cookie support for Safari, Chrome, Firefox and Brave
 - Recommended `mweb` + automatic PO-token mode
+- Optional cleanup of temporary PO-token browser processes
 - Optional Force IPv4 fallback
 - Optional verbose yt-dlp diagnostics
 - Restrict filenames
 - Overwrite existing files
 - Keep original downloaded media
 - Optional playlist-named subfolders
-- Progress, speed and ETA display
+- Progress bar, percentage, speed and ETA display
 - Cancel an active download
 
-## Desktop builds
+## Automated releases
+
+The workflow in `.github/workflows/release-build.yml` runs automatically for tags matching `v*`.
+
+For example:
+
+```bash
+git tag -a v0.2.2 -m "v0.2.2"
+git push origin v0.2.2
+```
+
+GitHub Actions then:
+
+1. builds `YouTube-Downloader-Windows.exe` on a Windows runner,
+2. builds `YouTube Downloader.app` on a macOS runner,
+3. packages the macOS application as `YouTube-Downloader-macOS.zip`, and
+4. creates or updates the GitHub Release and attaches both downloads.
+
+The workflow can also be run manually from the **Actions** tab for an existing release tag.
+
+## Local desktop builds
 
 - macOS: [BUILD_MACOS.md](BUILD_MACOS.md)
 - Windows: [BUILD_WINDOWS.md](BUILD_WINDOWS.md)
-
-Build the Windows `.exe` on Windows and the macOS `.app` on macOS.
 
 ## Updating yt-dlp and the PO-token provider
 
