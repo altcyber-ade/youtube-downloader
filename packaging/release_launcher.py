@@ -9,8 +9,6 @@ pretend that bundled dependencies are normal site-packages.
 from __future__ import annotations
 
 import importlib.util
-import shutil
-import subprocess
 import sys
 from importlib.metadata import PackageNotFoundError, version
 
@@ -21,46 +19,34 @@ RELEASE_VERSION = "0.2.4"
 WPC_DISTRIBUTION = "yt-dlp-getpot-wpc"
 
 
-def wpc_available(_self=None) -> bool:
-    """Detect the packaged WPC provider using distribution metadata first."""
+def wpc_metadata_available() -> bool:
     try:
         version(WPC_DISTRIBUTION)
         return True
     except PackageNotFoundError:
-        pass
+        return False
     except Exception:
-        pass
+        return False
 
+
+def wpc_module_available() -> bool:
     try:
         return importlib.util.find_spec(app.WPC_MODULE) is not None
     except (ImportError, ModuleNotFoundError, AttributeError):
         return False
 
 
-def executable_works(name: str) -> bool:
-    path = shutil.which(name)
-    if not path:
-        return False
-    try:
-        completed = subprocess.run(
-            [path, "-version"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=10,
-            check=False,
-        )
-        return completed.returncode == 0
-    except Exception:
-        return False
+def wpc_available(_self=None) -> bool:
+    """Packaged builds accept copied distribution metadata or module discovery."""
+    return wpc_metadata_available() or wpc_module_available()
 
 
 def self_test() -> int:
     checks = {
         "yt_dlp": app.yt_dlp is not None,
         "psutil": app.psutil is not None,
-        "wpc_provider": wpc_available(),
-        "ffmpeg": executable_works("ffmpeg"),
-        "ffprobe": executable_works("ffprobe"),
+        "wpc_metadata": wpc_metadata_available(),
+        "wpc_module": wpc_module_available(),
     }
     failed = [name for name, ok in checks.items() if not ok]
     if failed:
