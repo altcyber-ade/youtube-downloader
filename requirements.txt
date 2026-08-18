@@ -1,2 +1,3 @@
 yt-dlp[default]
 yt-dlp-getpot-wpc
+psutil
