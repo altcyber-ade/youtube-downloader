@@ -1,0 +1,144 @@
+name: Build and release desktop apps
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing tag to build and publish (for example v0.2.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-build.txt
+
+      - name: Verify runtime dependencies
+        run: |
+          python -c "import yt_dlp, psutil; import importlib.util; assert importlib.util.find_spec('yt_dlp_plugins.extractor.getpot_wpc'); print('Runtime dependencies OK')"
+
+      - name: Build Windows executable
+        run: >
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --windowed
+          --collect-submodules yt_dlp_plugins
+          --name "YouTube-Downloader-Windows"
+          youtube_downloader.py
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: dist/YouTube-Downloader-Windows.exe
+
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-build.txt
+
+      - name: Verify runtime dependencies
+        run: |
+          python -c "import yt_dlp, psutil; import importlib.util; assert importlib.util.find_spec('yt_dlp_plugins.extractor.getpot_wpc'); print('Runtime dependencies OK')"
+
+      - name: Build macOS app
+        run: |
+          python -m PyInstaller \
+            --noconfirm \
+            --clean \
+            --windowed \
+            --collect-submodules yt_dlp_plugins \
+            --name "YouTube Downloader" \
+            youtube_downloader.py
+
+      - name: Package macOS app
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            "dist/YouTube Downloader.app" \
+            "dist/YouTube-Downloader-macOS.zip"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: dist/YouTube-Downloader-macOS.zip
+
+  publish-release:
+    needs:
+      - build-windows
+      - build-macos
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release
+          path: release
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-release
+          path: release
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" \
+              release/YouTube-Downloader-Windows.exe \
+              release/YouTube-Downloader-macOS.zip \
+              --clobber \
+              --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$RELEASE_TAG" \
+              release/YouTube-Downloader-Windows.exe \
+              release/YouTube-Downloader-macOS.zip \
+              --generate-notes \
+              --title "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY"
+          fi
