@@ -14,12 +14,12 @@ metadata/thumbnail options, browser-cookie selection, progress reporting and can
 
 | Platform | Download | Notes |
 |---|---|---|
-| macOS | **[Download macOS app](https://github.com/altcyber-ade/youtube-downloader/releases/latest/download/YouTube-Downloader-macOS.zip)** | Unzip and open `YouTube Downloader.app`. FFmpeg and Chrome/Chromium are still required on the Mac. |
-| Windows | **[Download Windows EXE](https://github.com/altcyber-ade/youtube-downloader/releases/latest/download/YouTube-Downloader-Windows.exe)** | Portable executable. FFmpeg and Chrome/Chromium are still required on the PC. |
+| macOS | **[Download macOS app](https://github.com/altcyber-ade/youtube-downloader/releases/latest/download/YouTube-Downloader-macOS.zip)** | Unzip and open `YouTube Downloader.app`. FFmpeg/FFprobe are bundled. Chrome or Chromium is still required for automatic PO-token generation. |
+| Windows | **[Download Windows EXE](https://github.com/altcyber-ade/youtube-downloader/releases/latest/download/YouTube-Downloader-Windows.exe)** | Portable executable with FFmpeg/FFprobe bundled. Chrome or Chromium is still required for automatic PO-token generation. |
 
 [View all releases](https://github.com/altcyber-ade/youtube-downloader/releases)
 
-The downloads above are generated automatically by GitHub Actions whenever a `v*` release tag is pushed. The workflow builds the app natively on macOS and Windows and attaches both files to the matching GitHub Release.
+The downloads above are generated automatically by GitHub Actions whenever a `v*` release tag is pushed. The workflow builds the app natively on macOS and Windows, smoke-tests the packaged runtime dependencies, and attaches both files to the matching GitHub Release.
 
 ## YouTube compatibility (v0.2)
 
@@ -35,12 +35,17 @@ The PO-token provider automatically launches Chrome/Chromium briefly when yt-dlp
 
 ## Requirements
 
-- Python 3.10 or newer when running from source
+For the downloadable macOS and Windows builds, FFmpeg and FFprobe are bundled. You only need Chrome or Chromium for the automatic PO-token provider.
+
+When running from source you need:
+
+- Python 3.10 or newer
 - `yt-dlp[default]`
 - `yt-dlp-getpot-wpc`
+- `psutil`
 - Google Chrome or Chromium for automatic PO-token generation
 - FFmpeg available on your `PATH`
-- Tkinter when running from source
+- Tkinter
 
 ## Quick start from source
 
@@ -77,9 +82,7 @@ python -m pip install -r requirements.txt
 python youtube_downloader.py
 ```
 
-FFmpeg must be installed separately and its `bin` directory must be on `PATH`. Chrome or
-Chromium is also required for the automatic PO-token provider. See
-[BUILD_WINDOWS.md](BUILD_WINDOWS.md).
+When running from source, FFmpeg must be installed separately and its `bin` directory must be on `PATH`. Chrome or Chromium is also required for the automatic PO-token provider. See [BUILD_WINDOWS.md](BUILD_WINDOWS.md).
 
 ## Features
 
@@ -109,18 +112,20 @@ The workflow in `.github/workflows/release-build.yml` runs automatically for tag
 For example:
 
 ```bash
-git tag -a v0.2.2 -m "v0.2.2"
-git push origin v0.2.2
+git tag -a v0.2.4 -m "v0.2.4"
+git push origin v0.2.4
 ```
 
 GitHub Actions then:
 
-1. builds `YouTube-Downloader-Windows.exe` on a Windows runner,
-2. builds `YouTube Downloader.app` on a macOS runner,
-3. packages the macOS application as `YouTube-Downloader-macOS.zip`, and
-4. creates or updates the GitHub Release and attaches both downloads.
+1. installs and stages FFmpeg/FFprobe on each native runner,
+2. builds `YouTube-Downloader-Windows.exe` with the runtime dependencies and FFmpeg tools bundled,
+3. builds `YouTube Downloader.app` on macOS with the same bundled runtime dependencies,
+4. runs a packaged self-test checking yt-dlp, psutil, the WPC provider, FFmpeg and FFprobe,
+5. packages the macOS application as `YouTube-Downloader-macOS.zip`, and
+6. creates or updates the GitHub Release and attaches both downloads.
 
-The workflow can also be run manually from the **Actions** tab for an existing release tag.
+The workflow can also be run manually from the **Actions** tab for an existing release tag. A manual rebuild uses the source snapshot stored in that tag.
 
 ## Local desktop builds
 
@@ -133,12 +138,11 @@ The workflow can also be run manually from the **Actions** tab for an existing r
 python -m pip install -U -r requirements.txt
 ```
 
-YouTube changes frequently, so updating the dependencies is a useful first troubleshooting step.
+YouTube changes frequently, so updating the dependencies is a useful first troubleshooting step when running from source.
 
 ## Legacy v0.1 source
 
-`yt_dlp_mp3_gui.py` is retained for the v0.1 history. The current application entry point is
-`youtube_downloader.py`.
+`yt_dlp_mp3_gui.py` is retained for the v0.1 history. The current source application entry point is `youtube_downloader.py`; packaged releases use a small packaging launcher so their bundled-dependency checks stay separate from the source workflow.
 
 ## License
 
