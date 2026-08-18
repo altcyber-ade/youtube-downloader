@@ -89,6 +89,7 @@ jobs:
             --noconfirm \
             --clean \
             --windowed \
+            --runtime-hook packaging/macos_runtime_path.py \
             --collect-submodules yt_dlp_plugins \
             --name "YouTube Downloader" \
             youtube_downloader.py
