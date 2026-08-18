@@ -27,7 +27,13 @@ ffmpeg -version
 ffprobe -version
 ```
 
-## 3. Clone and install dependencies
+## 3. Install Chrome or Chromium
+
+Version 0.2 uses `yt-dlp-getpot-wpc` to generate YouTube PO tokens automatically. The provider
+requires Google Chrome or Chromium and may briefly launch the browser while a token is minted.
+Do not close that browser while yt-dlp is using it.
+
+## 4. Clone and install dependencies
 
 ```powershell
 git clone https://github.com/altcyber-ade/youtube-downloader.git
@@ -47,13 +53,15 @@ If PowerShell blocks activation, Command Prompt can use:
 .venv\Scripts\activate.bat
 ```
 
-## 4. Test the source
+## 5. Test the source
 
 ```powershell
-python yt_dlp_mp3_gui.py
+python youtube_downloader.py
 ```
 
-## 5. Build a single `.exe`
+Confirm a YouTube download works with **Use mweb + automatic PO-token provider** enabled.
+
+## 6. Build a single `.exe`
 
 ```powershell
 python -m PyInstaller `
@@ -61,8 +69,9 @@ python -m PyInstaller `
   --clean `
   --onefile `
   --windowed `
+  --collect-submodules yt_dlp_plugins `
   --name "yt-dlp-MP3-Downloader" `
-  yt_dlp_mp3_gui.py
+  youtube_downloader.py
 ```
 
 Output:
@@ -71,7 +80,7 @@ Output:
 dist\yt-dlp-MP3-Downloader.exe
 ```
 
-FFmpeg is not bundled and must still be installed on the target machine and available on `PATH`.
+FFmpeg and Chrome/Chromium are not bundled and must still be installed on the target machine.
 
 ## Optional folder build
 
@@ -82,8 +91,9 @@ python -m PyInstaller `
   --noconfirm `
   --clean `
   --windowed `
+  --collect-submodules yt_dlp_plugins `
   --name "yt-dlp-MP3-Downloader" `
-  yt_dlp_mp3_gui.py
+  youtube_downloader.py
 ```
 
 ## Optional icon
@@ -96,8 +106,8 @@ Add this to the PyInstaller command:
 
 ## Before making a release
 
-Update yt-dlp, retest, and rebuild:
+Update yt-dlp and the PO-token provider, retest, and rebuild:
 
 ```powershell
-python -m pip install -U "yt-dlp[default]"
+python -m pip install -U -r requirements.txt
 ```
